@@ -5,7 +5,8 @@ Interactive API documentation for the SnoreMD Medical Notes API.
 ## Quick Start
 
 ```bash
-cd docs/swagger
+git clone https://github.com/devchuckcamp/open-docs-api/
+cd /open-docs-api/
 npm install
 npm start
 ```
