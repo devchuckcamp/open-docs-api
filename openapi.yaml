@@ -1,0 +1,1034 @@
+openapi: 3.0.3
+info:
+  title: SnoreMD Medical Notes API
+  description: |
+    REST API for managing medical notes in a multi-tenant sleep clinic SaaS application.
+
+    ## Authentication
+
+    All endpoints (except `/auth/login` and `/auth/refresh`) require a JWT token in the `Authorization` header:
+    ```
+    Authorization: Bearer <idToken>
+    ```
+
+    Get your token by calling `/auth/login` with test credentials.
+    Use `/auth/refresh` to get new tokens when the current ones expire.
+
+    ## Test Users
+
+    | Username | Password | Clinic |
+    |----------|----------|--------|
+    | dr-smith | SecurePass123! | Metro Sleep LA |
+    | dr-wilson | SecurePass123! | Advanced Sleep Chicago |
+    | dr-chen | SecurePass123! | Sleep Wellness NYC |
+
+    ## Tenant Isolation
+
+    Each user can only access patients from their own clinic:
+    - dr-smith: pat-20001 to pat-20010
+    - dr-wilson: pat-30001 to pat-30010
+    - dr-chen: pat-10001 to pat-10010
+
+  version: 1.0.0
+  contact:
+    name: SnoreMD Support
+
+servers:
+  - url: http://localhost:3000
+    description: Local Development
+  - url: https://gksonzdd9g.execute-api.us-east-1.amazonaws.com/dev
+    description: AWS DEV
+
+tags:
+  - name: Authentication
+    description: Login and token management
+  - name: Notes
+    description: Medical notes CRUD operations
+  - name: Attachments
+    description: File attachment management
+  - name: Clinic
+    description: Clinic and patient information
+
+paths:
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Login and get JWT tokens
+      description: Authenticate with username and password to receive JWT tokens for API access.
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              drSmith:
+                summary: Dr. Smith (Metro Sleep LA)
+                value:
+                  username: dr-smith
+                  password: SecurePass123!
+              drWilson:
+                summary: Dr. Wilson (Advanced Sleep Chicago)
+                value:
+                  username: dr-wilson
+                  password: SecurePass123!
+              drChen:
+                summary: Dr. Chen (Sleep Wellness NYC)
+                value:
+                  username: dr-chen
+                  password: SecurePass123!
+      responses:
+        '200':
+          description: Successful authentication
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh JWT tokens
+      description: |
+        Exchange a refresh token for new access and ID tokens.
+        Use this when your tokens expire without requiring the user to log in again.
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+            example:
+              refreshToken: eyJjdHkiOiJKV1QiLCJlbmMiOiJBMjU2R0NNIiwiYWxnIjoiUlNBLU9BRVAifQ...
+              username: dr-smith
+      responses:
+        '200':
+          description: Tokens refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid or expired refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /clinic:
+    get:
+      tags:
+        - Clinic
+      summary: Get current clinic info
+      description: Returns information about the authenticated user's clinic.
+      operationId: getClinic
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Clinic information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClinicResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /patients:
+    get:
+      tags:
+        - Clinic
+      summary: List patients for clinic
+      description: Returns all patients accessible to the authenticated user's clinic.
+      operationId: listPatients
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of patients
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PatientsListResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /patients/{patientId}/notes:
+    get:
+      tags:
+        - Notes
+      summary: List notes for a patient
+      description: |
+        Returns paginated list of notes for the specified patient.
+        Use `cursor` from the response to fetch the next page.
+      operationId: listNotes
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/patientId'
+        - name: limit
+          in: query
+          description: Number of items per page (max 100)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: cursor
+          in: query
+          description: Pagination cursor from previous response
+          schema:
+            type: string
+        - name: tag
+          in: query
+          description: Filter by tag
+          schema:
+            type: string
+          example: follow-up
+        - name: from
+          in: query
+          description: Filter by study date (start)
+          schema:
+            type: string
+            format: date
+          example: '2024-01-01'
+        - name: to
+          in: query
+          description: Filter by study date (end)
+          schema:
+            type: string
+            format: date
+          example: '2024-12-31'
+      responses:
+        '200':
+          description: Paginated list of notes
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotesListResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied to patient
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      tags:
+        - Notes
+      summary: Create a new note
+      description: Creates a new medical note for the specified patient.
+      operationId: createNote
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/patientId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNoteRequest'
+            examples:
+              clinicalNote:
+                summary: Clinical Note
+                value:
+                  title: Sleep Study Results
+                  content: "Patient shows moderate sleep apnea with AHI of 15. Recommending CPAP therapy."
+                  studyDate: '2024-01-15'
+                  noteType: clinical
+                  tags:
+                    - sleep-study
+                    - apnea
+              followUp:
+                summary: Follow-up Note
+                value:
+                  title: CPAP Follow-up
+                  content: "Patient reports improved sleep quality after 2 weeks of CPAP therapy."
+                  studyDate: '2024-02-01'
+                  noteType: follow-up
+                  tags:
+                    - cpap
+                    - follow-up
+      responses:
+        '201':
+          description: Note created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /patients/{patientId}/notes/{noteId}:
+    get:
+      tags:
+        - Notes
+      summary: Get a single note
+      description: Returns the specified note.
+      operationId: getNote
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/patientId'
+        - $ref: '#/components/parameters/noteId'
+      responses:
+        '200':
+          description: Note details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Note not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags:
+        - Notes
+      summary: Update a note
+      description: |
+        Updates the specified note. Requires the current `version` for optimistic concurrency control.
+        If another update occurred, you'll receive a 409 Conflict error.
+      operationId: updateNote
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/patientId'
+        - $ref: '#/components/parameters/noteId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNoteRequest'
+            example:
+              title: Updated Sleep Study Results
+              content: "Patient shows moderate sleep apnea with AHI of 15. Starting CPAP therapy at 10cm H2O."
+              version: 1
+      responses:
+        '200':
+          description: Note updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Note not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Version conflict - note was modified by another user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags:
+        - Notes
+      summary: Delete a note (soft delete)
+      description: |
+        Soft deletes the specified note by setting a `deletedAt` timestamp.
+        The note will be excluded from list queries but remains in the database.
+      operationId: deleteNote
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/patientId'
+        - $ref: '#/components/parameters/noteId'
+      responses:
+        '204':
+          description: Note deleted successfully
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Note not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /patients/{patientId}/notes/{noteId}/attachments/presign:
+    post:
+      tags:
+        - Attachments
+      summary: Get presigned upload URL
+      description: |
+        Generates a presigned S3 URL for uploading a file attachment.
+
+        **Upload workflow:**
+        1. Call this endpoint to get the upload URL
+        2. PUT the file directly to S3 using the returned URL
+        3. Update the note with the attachment metadata
+      operationId: presignUpload
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/patientId'
+        - $ref: '#/components/parameters/noteId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PresignUploadRequest'
+            example:
+              fileName: sleep-study-report.pdf
+              contentType: application/pdf
+              sizeBytes: 1048576
+      responses:
+        '200':
+          description: Presigned URL generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresignUploadResponse'
+        '400':
+          description: Validation error (invalid file type or size)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /patients/{patientId}/notes/{noteId}/attachments/{attachmentId}/download:
+    get:
+      tags:
+        - Attachments
+      summary: Get presigned download URL
+      description: Generates a presigned S3 URL for downloading an attachment.
+      operationId: presignDownload
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/patientId'
+        - $ref: '#/components/parameters/noteId'
+        - $ref: '#/components/parameters/attachmentId'
+      responses:
+        '200':
+          description: Presigned download URL
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresignDownloadResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Access denied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Attachment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token from `/auth/login` response.
+        Use the `idToken` (not accessToken) as it contains required claims.
+
+  parameters:
+    patientId:
+      name: patientId
+      in: path
+      required: true
+      description: Patient identifier
+      schema:
+        type: string
+      examples:
+        metroSleepLA:
+          summary: Metro Sleep LA patient
+          value: pat-20001
+        advancedSleepChi:
+          summary: Advanced Sleep Chicago patient
+          value: pat-30001
+        sleepWellnessNYC:
+          summary: Sleep Wellness NYC patient
+          value: pat-10001
+
+    noteId:
+      name: noteId
+      in: path
+      required: true
+      description: Note identifier (UUID)
+      schema:
+        type: string
+        format: uuid
+
+    attachmentId:
+      name: attachmentId
+      in: path
+      required: true
+      description: Attachment identifier (UUID)
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    LoginRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+          description: Cognito username
+          example: dr-smith
+        password:
+          type: string
+          format: password
+          description: User password
+          example: SecurePass123!
+
+    LoginResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            idToken:
+              type: string
+              description: JWT ID token (use this for API requests)
+            accessToken:
+              type: string
+              description: JWT access token
+            refreshToken:
+              type: string
+              description: Refresh token for obtaining new tokens
+            expiresIn:
+              type: integer
+              description: Token expiration time in seconds
+              example: 3600
+            tokenType:
+              type: string
+              example: Bearer
+
+    RefreshRequest:
+      type: object
+      required:
+        - refreshToken
+        - username
+      properties:
+        refreshToken:
+          type: string
+          description: Refresh token from login response
+        username:
+          type: string
+          description: Username used for login (required for Cognito secret hash)
+          example: dr-smith
+
+    RefreshResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            idToken:
+              type: string
+              description: New JWT ID token
+            accessToken:
+              type: string
+              description: New JWT access token
+            expiresIn:
+              type: integer
+              description: Token expiration time in seconds
+              example: 3600
+            tokenType:
+              type: string
+              example: Bearer
+
+    ClinicResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            clinicId:
+              type: string
+              example: clinic-metro-sleep-la
+            name:
+              type: string
+              example: Metro Sleep LA
+            address:
+              type: string
+            phone:
+              type: string
+            status:
+              type: string
+              enum: [active, inactive]
+
+    PatientsListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Patient'
+
+    Patient:
+      type: object
+      properties:
+        patientId:
+          type: string
+          example: pat-20001
+        firstName:
+          type: string
+          example: John
+        lastName:
+          type: string
+          example: Smith
+        dateOfBirth:
+          type: string
+          format: date
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        gender:
+          type: string
+          enum: [male, female, other]
+        status:
+          type: string
+          enum: [active, inactive]
+
+    CreateNoteRequest:
+      type: object
+      required:
+        - title
+        - content
+        - studyDate
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Note title
+          example: Sleep Study Results
+        content:
+          type: string
+          minLength: 1
+          maxLength: 50000
+          description: Note content/body
+          example: Patient shows moderate sleep apnea with AHI of 15.
+        studyDate:
+          type: string
+          format: date
+          description: Date of the study/visit
+          example: '2024-01-15'
+        noteType:
+          type: string
+          maxLength: 50
+          description: Type of note
+          example: clinical
+        tags:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            maxLength: 50
+          description: Tags for categorization
+          example: [sleep-study, apnea]
+        attachments:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/AttachmentInput'
+
+    UpdateNoteRequest:
+      type: object
+      required:
+        - version
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+        content:
+          type: string
+          minLength: 1
+          maxLength: 50000
+        studyDate:
+          type: string
+          format: date
+        noteType:
+          type: string
+          maxLength: 50
+        tags:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            maxLength: 50
+        attachments:
+          type: array
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/AttachmentInput'
+        version:
+          type: integer
+          minimum: 1
+          description: Current version number (for optimistic concurrency)
+          example: 1
+
+    AttachmentInput:
+      type: object
+      required:
+        - id
+        - fileName
+        - contentType
+        - sizeBytes
+        - s3Key
+        - uploadedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+          maxLength: 255
+        contentType:
+          type: string
+        sizeBytes:
+          type: integer
+          maximum: 104857600
+        s3Key:
+          type: string
+        uploadedAt:
+          type: string
+          format: date-time
+
+    NoteResponse:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/Note'
+
+    NotesListResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Note'
+            nextCursor:
+              type: string
+              nullable: true
+              description: Cursor for fetching next page (null if no more pages)
+
+    Note:
+      type: object
+      properties:
+        noteId:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        clinicId:
+          type: string
+          example: clinic-metro-sleep-la
+        patientId:
+          type: string
+          example: pat-20001
+        title:
+          type: string
+          example: Sleep Study Results
+        content:
+          type: string
+          example: Patient shows moderate sleep apnea with AHI of 15.
+        studyDate:
+          type: string
+          format: date
+          example: '2024-01-15'
+        noteType:
+          type: string
+          example: clinical
+        tags:
+          type: array
+          items:
+            type: string
+          example: [sleep-study, apnea]
+        attachments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Attachment'
+        status:
+          type: string
+          enum: [draft, final]
+        version:
+          type: integer
+          example: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+        updatedBy:
+          type: string
+
+    Attachment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+          example: sleep-study-report.pdf
+        contentType:
+          type: string
+          example: application/pdf
+        sizeBytes:
+          type: integer
+          example: 1048576
+        s3Key:
+          type: string
+        uploadedAt:
+          type: string
+          format: date-time
+
+    PresignUploadRequest:
+      type: object
+      required:
+        - fileName
+        - contentType
+        - sizeBytes
+      properties:
+        fileName:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Original file name
+          example: sleep-study-report.pdf
+        contentType:
+          type: string
+          description: MIME type of the file
+          example: application/pdf
+          enum:
+            - application/pdf
+            - image/jpeg
+            - image/png
+            - image/gif
+            - application/dicom
+            - text/plain
+            - text/csv
+        sizeBytes:
+          type: integer
+          minimum: 1
+          maximum: 104857600
+          description: File size in bytes (max 100MB)
+          example: 1048576
+
+    PresignUploadResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            uploadUrl:
+              type: string
+              format: uri
+              description: Presigned S3 PUT URL
+            s3Key:
+              type: string
+              description: S3 object key for the file
+            attachmentId:
+              type: string
+              format: uuid
+              description: Attachment ID to use when updating the note
+            expiresIn:
+              type: integer
+              description: URL expiration time in seconds
+              example: 900
+
+    PresignDownloadResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            downloadUrl:
+              type: string
+              format: uri
+              description: Presigned S3 GET URL
+            expiresIn:
+              type: integer
+              description: URL expiration time in seconds
+              example: 900
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Error code
+              example: VALIDATION_ERROR
+            message:
+              type: string
+              description: Human-readable error message
+              example: Validation failed
+            details:
+              type: object
+              description: Additional error details
